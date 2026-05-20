@@ -43,11 +43,15 @@ import { type Observable } from 'rxjs';
 //   interfering with the response data flowing through the pipeline.
 import { tap } from 'rxjs/operators';
 
+// Per-process request counter — see products-service/logging.interceptor.ts
+// for the full explanation of why this lives at module scope.
+let reqCounter = 0;
+
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
   // Logger('API') — NestJS's built-in structured logger.
   //   The string 'API' is the context label shown in brackets:
-  //     [Nest] 12345  LOG [API] → GraphQL query products
+  //     [Nest] 12345  LOG [API] #1 → GraphQL mutation createProduct
   //   Using Logger (not console.log) means the output respects NestJS's log
   //   level configuration and formats consistently with Nest's own messages.
   private readonly logger = new Logger('API');
@@ -59,13 +63,17 @@ export class LoggingInterceptor implements NestInterceptor {
   //              Observable of the result. We must call it or the request hangs.
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const start = Date.now();
+    // Capture the counter value for THIS call so both the → and ← lines share
+    // the same #N even when concurrent requests interleave in the log output.
+    const reqId = ++reqCounter;
 
     // Build a human-readable label BEFORE the handler runs so the "→" log
     // line appears before any handler output (db queries, gRPC calls, etc.).
     const label = this.buildLabel(context);
 
-    // Log the incoming call.
-    this.logger.log(`→ ${label}`);
+    // Log the incoming call with a wall-clock timestamp so interleaved logs
+    // from multiple services can be correlated by eye.
+    this.logger.log(`#${reqId} → ${label}  @${new Date().toISOString().slice(11, 23)}`);
 
     // next.handle() returns an Observable that:
     //   - emits the handler's return value on success
@@ -77,10 +85,9 @@ export class LoggingInterceptor implements NestInterceptor {
     // Neither callback changes the stream — they're pure side-effects.
     return next.handle().pipe(
       tap({
-        next: () =>
-          this.logger.log(`← ${label}  +${Date.now() - start}ms`),
+        next: () => this.logger.log(`#${reqId} ← ${label}  +${Date.now() - start}ms`),
         error: (err: Error) =>
-          this.logger.error(`✗ ${label}  +${Date.now() - start}ms — ${err.message}`),
+          this.logger.error(`#${reqId} ✗ ${label}  +${Date.now() - start}ms — ${err.message}`),
       }),
     );
   }

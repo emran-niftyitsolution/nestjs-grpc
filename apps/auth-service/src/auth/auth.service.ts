@@ -31,8 +31,8 @@
 
 import type {
   AuthResponse,
-  AuthUser as ProtoAuthUser,
   LoginRequest,
+  AuthUser as ProtoAuthUser,
   RegisterRequest,
   TokenPayload,
   ValidateTokenRequest,
@@ -44,7 +44,7 @@ import { RpcException } from '@nestjs/microservices';
 import * as bcrypt from 'bcryptjs';
 import { eq } from 'drizzle-orm';
 
-import { DRIZZLE_CLIENT, type DrizzleClient, type User as DbUser, users } from '../db';
+import { type User as DbUser, DRIZZLE_CLIENT, type DrizzleClient, users } from '../db';
 
 // ---------------------------------------------------------------------------
 // toProtoAuthUser — converts a Drizzle DB row to the proto message shape.

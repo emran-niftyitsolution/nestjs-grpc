@@ -128,7 +128,7 @@ export class ProductsService {
   // ---------------------------------------------------------------------------
   listStream(_data: ListStreamRequest): Observable<ProtoProduct> {
     return from(this.db.select().from(products)).pipe(
-      mergeMap(rows => from(rows.map(toProtoProduct))),
+      mergeMap((rows) => from(rows.map(toProtoProduct))),
     );
   }
 

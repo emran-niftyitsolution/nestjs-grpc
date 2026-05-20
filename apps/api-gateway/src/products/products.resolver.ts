@@ -156,8 +156,8 @@ export class ProductsResolver {
   // ---------------------------------------------------------------------------
   @Query(() => [ProductType], { name: 'productsStream' })
   productsStream(): Promise<ProductType[]> {
-    return lastValueFrom(
-      this.productsService.listStream().pipe(toArray()),
-    ) as Promise<ProductType[]>;
+    return lastValueFrom(this.productsService.listStream().pipe(toArray())) as Promise<
+      ProductType[]
+    >;
   }
 }

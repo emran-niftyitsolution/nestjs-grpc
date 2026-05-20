@@ -43,9 +43,7 @@ async function bootstrap() {
   app.useGlobalInterceptors(new LoggingInterceptor());
 
   await app.listen();
-  console.log(
-    `[auth-service] gRPC listening on 0.0.0.0:${process.env.AUTH_GRPC_PORT ?? 50051}`,
-  );
+  console.log(`[auth-service] gRPC listening on 0.0.0.0:${process.env.AUTH_GRPC_PORT ?? 50051}`);
 }
 
 bootstrap();

@@ -241,22 +241,189 @@ nestjs-grpc/
 
 ---
 
-## How JWT auth works
+## API call flows
+
+Numbered traces of every hop a request makes — useful for understanding exactly
+which code runs and in what order.
+
+---
+
+### Flow 1 — `register` mutation (no auth required)
 
 ```
-1. client calls `register` or `login` mutation
-2. api-gateway forwards to auth-service via gRPC
-3. auth-service hashes password (bcrypt, cost=12) and signs a JWT
-4. JWT is returned to the client as `accessToken`
-
-On protected mutations (createProduct, updateProduct, deleteProduct):
-5. client sends:  Authorization: Bearer <accessToken>
-6. JwtAuthGuard extracts the token
-7. Gateway calls auth-service.ValidateToken via gRPC
-8. auth-service verifies the JWT signature (secret never leaves auth-service)
-9. Decoded payload { userId, email, name } attached to req.user
-10. Resolver runs
+Client                  api-gateway              auth-service          PostgreSQL
+  │                         │                         │                     │
+  │  POST /graphql           │                         │                     │
+  │  mutation register(...)  │                         │                     │
+  ①─────────────────────────►│                         │                     │
+  │                         │                         │                     │
+  │                    ② Apollo Server parses GraphQL  │                     │
+  │                    ③ routes to AuthResolver        │                     │
+  │                    ④ calls AuthClientService       │                     │
+  │                         │  gRPC Register(email,    │                     │
+  │                         │  password, name)         │                     │
+  │                         ⑤────────────────────────►│                     │
+  │                         │                    ⑥ check email uniqueness    │
+  │                         │                         ⑦──SELECT users──────►│
+  │                         │                         │◄─────────────────────│
+  │                         │                    ⑧ bcrypt.hash(password, 12) │
+  │                         │                    ⑨ INSERT INTO users         │
+  │                         │                         ⑩──INSERT────────────►│
+  │                         │                         │◄── row returned ──────│
+  │                         │                    ⑪ jwtService.sign(payload)  │
+  │                         │  AuthResponse{           │                     │
+  │                         │  accessToken, user}      │                     │
+  │                         │◄─────────────────────────│                     │
+  │  { accessToken, user }  │                         │                     │
+  ①◄────────────────────────│                         │                     │
 ```
+
+---
+
+### Flow 2 — `products` query (public, no token needed)
+
+```
+Client                  api-gateway             products-service        PostgreSQL
+  │                         │                         │                     │
+  │  POST /graphql           │                         │                     │
+  │  query { products }      │                         │                     │
+  ①─────────────────────────►│                         │                     │
+  │                    ② Apollo parses query            │                     │
+  │                    ③ routes to ProductsResolver     │                     │
+  │                    ④ (no guard — public query)      │                     │
+  │                    ⑤ calls ProductsClientService    │                     │
+  │                         │  gRPC FindAll({})         │                     │
+  │                         ⑥────────────────────────►│                     │
+  │                         │                    ⑦ SELECT * FROM products    │
+  │                         │                         ⑧──────────────────►│
+  │                         │                         │◄── rows ─────────────│
+  │                         │                    ⑨ map rows → proto Product[] │
+  │                         │  FindAllResponse{        │                     │
+  │                         │  products: [...]}        │                     │
+  │                         │◄─────────────────────────│                     │
+  │  { data: { products }}  │                         │                     │
+  ①◄────────────────────────│                         │                     │
+```
+
+---
+
+### Flow 3 — `createProduct` mutation (protected — JWT required)
+
+```
+Client                  api-gateway   auth-service  products-service   PostgreSQL
+  │                         │              │               │                │
+  │  POST /graphql           │              │               │                │
+  │  Authorization:          │              │               │                │
+  │  Bearer <token>          │              │               │                │
+  │  mutation createProduct  │              │               │                │
+  ①─────────────────────────►│              │               │                │
+  │                    ② Apollo parses mutation            │                │
+  │                    ③ routes to ProductsResolver        │                │
+  │                    ④ @UseGuards(JwtAuthGuard) fires     │                │
+  │                    ⑤ guard extracts Bearer token        │                │
+  │                         │  gRPC ValidateToken(token)    │                │
+  │                         ⑥──────────────────────────────►               │
+  │                         │  ⑦ jwtService.verify(token)   │                │
+  │                         │  TokenPayload{userId,email}   │                │
+  │                         │◄──────────────────────────────               │
+  │                    ⑧ req.user = { userId, email, name }                 │
+  │                    ⑨ guard returns true → resolver runs                  │
+  │                    ⑩ calls ProductsClientService                        │
+  │                         │  gRPC CreateProduct(input)    │                │
+  │                         ⑪──────────────────────────────────────────────►│ (to products-service)
+  │                         │               │    ⑫ INSERT INTO products     │
+  │                         │               │               ⑬──────────────►│
+  │                         │               │               │◄── new row ───│
+  │                         │  Product{ id, name, price }   │                │
+  │                         │◄──────────────────────────────────────────────│
+  │  { data:{createProduct}}│              │               │                │
+  ①◄────────────────────────│              │               │                │
+```
+
+> Without a token (or with an expired one): the guard throws at step ⑥ and
+> the response is `{ errors: [{ message: "No authentication token provided" }] }`.
+> The resolver and products-service are **never called**.
+
+---
+
+### Flow 4 — `createOrder` mutation (S2S call — orders calls products internally)
+
+```
+Client           api-gateway    orders-service   products-service   PostgreSQL
+  │                   │               │                │                │
+  │  mutation          │               │                │                │
+  │  createOrder(      │               │                │                │
+  │  productId,qty)    │               │                │                │
+  ①──────────────────►│               │                │                │
+  │              ② Apollo parses      │                │                │
+  │              ③ OrdersResolver      │                │                │
+  │              ④ OrdersClientService │                │                │
+  │                   │  gRPC CreateOrder(productId,qty)│                │
+  │                   ⑤──────────────►│                │                │
+  │                   │         ⑥ OrdersService.createOrder()            │
+  │                   │               │  gRPC FindOne(productId)         │
+  │                   │               ⑦───────────────►│                │
+  │                   │               │         ⑧ SELECT WHERE id=...   │
+  │                   │               │                ⑨───────────────►│
+  │                   │               │                │◄── product row ─│
+  │                   │               │◄── Product{price} ───────────────│
+  │                   │         ⑩ totalPrice = price × qty               │
+  │                   │         ⑪ INSERT INTO orders                     │
+  │                   │               ⑫───────────────────────────────►│
+  │                   │               │◄────────────── new order row ────│
+  │                   │  Order{id, totalPrice, status}  │                │
+  │                   │◄──────────────│                │                │
+  │  {data:{createOrder}} │            │                │                │
+  ①◄──────────────────│               │                │                │
+```
+
+> Steps ⑦–⑨ are a **service-to-service (S2S) gRPC call** — orders-service acts
+> as a gRPC *client* calling products-service, even though it is itself a gRPC
+> *server* for api-gateway. This is how microservices compose.
+
+---
+
+### Flow 5 — `me` query (reads JWT payload from request context, no extra gRPC call)
+
+```
+Client                  api-gateway              auth-service
+  │                         │                         │
+  │  POST /graphql           │                         │
+  │  Authorization:          │                         │
+  │  Bearer <token>          │                         │
+  │  query { me }            │                         │
+  ①─────────────────────────►│                         │
+  │                    ② Apollo parses query            │
+  │                    ③ routes to AuthResolver.me()    │
+  │                    ④ @UseGuards(JwtAuthGuard) fires  │
+  │                    ⑤ guard extracts Bearer token     │
+  │                         │  gRPC ValidateToken(token) │
+  │                         ⑥────────────────────────►│
+  │                         │  TokenPayload{           │
+  │                         │  userId, email, name}    │
+  │                         │◄─────────────────────────│
+  │                    ⑦ req.user = TokenPayload        │
+  │                    ⑧ resolver reads req.user        │
+  │                    (no further gRPC or DB calls)     │
+  │  { me:{userId,email,name}} │                        │
+  ①◄────────────────────────│                         │
+```
+
+---
+
+### Request layer summary
+
+| Layer | File | What it does |
+|---|---|---|
+| GraphQL transport | Apollo Server (in api-gateway) | Parses query/mutation, routes to resolver |
+| Guard | `jwt-auth.guard.ts` | Validates Bearer token via gRPC before resolver runs |
+| Resolver | `*.resolver.ts` | Extracts GraphQL args, calls service |
+| Gateway service | `*.service.ts` (gateway) | Wraps gRPC call, converts Observable → Promise |
+| gRPC transport | `@nestjs/microservices` | Serializes/deserializes protobuf over HTTP/2 |
+| Microservice controller | `*.controller.ts` | Receives RPC, delegates to service |
+| Microservice service | `*.service.ts` (microservice) | Business logic + Drizzle query |
+| ORM | Drizzle | Builds SQL, sends to Postgres |
+| Database | PostgreSQL | Executes SQL, returns rows |
 
 ---
 

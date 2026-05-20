@@ -18,7 +18,7 @@
 
 import type { AuthResponse, LoginRequest, RegisterRequest, TokenPayload } from '@app/proto';
 import { AUTH_SERVICE } from '@app/proto';
-import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { type ClientGrpc } from '@nestjs/microservices';
 import { firstValueFrom, type Observable } from 'rxjs';
 
@@ -37,6 +37,10 @@ interface AuthGrpcService {
 
 @Injectable()
 export class AuthClientService implements OnModuleInit {
+  // [GW] log prefix identifies gateway-side gRPC dispatch in the console output.
+  // These logs correspond to the numbered flow steps in the README diagrams.
+  private readonly logger = new Logger('GW');
+
   // `grpc` is the ClientGrpc proxy injected by ClientsModule.
   // It does NOT have typed methods yet — those come from `getService()` below.
   private grpc: AuthGrpcService;
@@ -57,17 +61,26 @@ export class AuthClientService implements OnModuleInit {
   // PUBLIC METHODS — one per gRPC RPC, Observable → Promise conversion.
   // ---------------------------------------------------------------------------
 
-  register(data: RegisterRequest): Promise<AuthResponse> {
-    return firstValueFrom(this.grpc.register(data));
+  async register(data: RegisterRequest): Promise<AuthResponse> {
+    this.logger.log(`→ auth-service.Register (gRPC)  email=${data.email}`);
+    const result = await firstValueFrom(this.grpc.register(data));
+    this.logger.log(`← auth-service.Register  userId=${result.user?.id}`);
+    return result;
   }
 
-  login(data: LoginRequest): Promise<AuthResponse> {
-    return firstValueFrom(this.grpc.login(data));
+  async login(data: LoginRequest): Promise<AuthResponse> {
+    this.logger.log(`→ auth-service.Login (gRPC)  email=${data.email}`);
+    const result = await firstValueFrom(this.grpc.login(data));
+    this.logger.log(`← auth-service.Login  userId=${result.user?.id}`);
+    return result;
   }
 
   // Called by JwtAuthGuard on every protected GraphQL operation.
   // Returns TokenPayload { userId, email, name } or throws if token is invalid.
-  validateToken(token: string): Promise<TokenPayload> {
-    return firstValueFrom(this.grpc.validateToken({ token }));
+  async validateToken(token: string): Promise<TokenPayload> {
+    this.logger.log('→ auth-service.ValidateToken (gRPC)');
+    const result = await firstValueFrom(this.grpc.validateToken({ token }));
+    this.logger.log(`← auth-service.ValidateToken  userId=${result.userId}`);
+    return result;
   }
 }

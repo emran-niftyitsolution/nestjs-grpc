@@ -69,7 +69,8 @@ import { ProductsClientService } from './products.service';
           // WHY not hardcode 'products-service:50052' here:
           //   The app runs in both dev (localhost) and Docker (DNS name). A
           //   single env var lets you switch context with zero code changes.
-          url: process.env.PRODUCTS_GRPC_URL ?? `localhost:${process.env.PRODUCTS_GRPC_PORT ?? 50052}`,
+          url:
+            process.env.PRODUCTS_GRPC_URL ?? `localhost:${process.env.PRODUCTS_GRPC_PORT ?? 50052}`,
         },
       },
     ]),

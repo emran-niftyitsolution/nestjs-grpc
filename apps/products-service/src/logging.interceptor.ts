@@ -9,7 +9,7 @@
 // branch on context type — we always have exactly one shape to deal with.
 //
 // WHAT IS LOGGED:
-//   → ProductsController.findAll
+//   → ProductsController.findAll  @20:03:11.423
 //   ← ProductsController.findAll  +8ms
 //   ✗ ProductsController.findOne  +3ms — Product with id '...' not found
 // ---------------------------------------------------------------------------
@@ -24,12 +24,23 @@ import {
 import { type Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 
+// Module-level counter — incremented once per incoming RPC call.
+// WHY module-level (not a class field):
+//   A class field resets to 0 every time NestJS creates a new interceptor
+//   instance. The module scope persists for the lifetime of the process, so
+//   the counter keeps incrementing across all requests without a shared store.
+//   Node.js is single-threaded so there is no race condition on this increment.
+let reqCounter = 0;
+
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
   private readonly logger = new Logger('RPC');
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const start = Date.now();
+    // Capture the counter value for THIS call so both the → and ← lines share
+    // the same #N even when concurrent requests interleave in the log output.
+    const reqId = ++reqCounter;
 
     // context.getClass()   — the controller class that will handle this RPC.
     //   .name              — e.g. 'ProductsController'
@@ -41,14 +52,16 @@ export class LoggingInterceptor implements NestInterceptor {
     // easy to find the code being invoked.
     const label = `${context.getClass().name}.${context.getHandler().name}`;
 
-    this.logger.log(`→ ${label}`);
+    // toISOString() gives "YYYY-MM-DDTHH:mm:ss.SSSZ" — slice(11,23) extracts
+    // "HH:mm:ss.SSS" (UTC). Appended to the entry log so you can see WHEN the
+    // call arrived, not just that it did. The exit log shows how long it took.
+    this.logger.log(`#${reqId} → ${label}  @${new Date().toISOString().slice(11, 23)}`);
 
     return next.handle().pipe(
       tap({
-        next: () =>
-          this.logger.log(`← ${label}  +${Date.now() - start}ms`),
+        next: () => this.logger.log(`#${reqId} ← ${label}  +${Date.now() - start}ms`),
         error: (err: Error) =>
-          this.logger.error(`✗ ${label}  +${Date.now() - start}ms — ${err.message}`),
+          this.logger.error(`#${reqId} ✗ ${label}  +${Date.now() - start}ms — ${err.message}`),
       }),
     );
   }

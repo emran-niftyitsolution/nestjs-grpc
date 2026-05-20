@@ -27,17 +27,12 @@
 //     { "Authorization": "Bearer eyJhbGci..." }
 // ---------------------------------------------------------------------------
 
-import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { UseGuards } from '@nestjs/common';
+import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql';
 
 import { AuthClientService } from './auth.service';
+import { AuthPayloadType, LoginInput, RegisterInput, TokenPayloadType } from './auth.types';
 import { JwtAuthGuard } from './jwt-auth.guard';
-import {
-  AuthPayloadType,
-  LoginInput,
-  RegisterInput,
-  TokenPayloadType,
-} from './auth.types';
 
 @Resolver()
 export class AuthResolver {

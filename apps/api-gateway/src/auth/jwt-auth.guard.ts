@@ -32,6 +32,7 @@ import {
   type CanActivate,
   type ExecutionContext,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { GqlExecutionContext } from '@nestjs/graphql';
@@ -40,6 +41,10 @@ import { AuthClientService } from './auth.service';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
+  // [Guard] log prefix mirrors the numbered flow diagrams in the README.
+  // Each log line corresponds to a numbered step in the auth flow.
+  private readonly logger = new Logger('Guard');
+
   constructor(
     // AuthClientService wraps the gRPC ValidateToken call.
     // DI provides it because the guard is in the same module as the service.
@@ -47,28 +52,38 @@ export class JwtAuthGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    // ── 1. Extract the token ──────────────────────────────────────────────────
+    // ── Step: Extract the token ───────────────────────────────────────────────
+    this.logger.log('extracting Bearer token from Authorization header');
     const token = this.extractToken(context);
 
     if (!token) {
       // No Authorization header or missing Bearer prefix.
       // Throwing gives a clear "401 Unauthorized" rather than a silent false.
+      this.logger.warn('✗ no Bearer token found — rejecting request');
       throw new UnauthorizedException('No authentication token provided');
     }
 
-    // ── 2. Validate via auth-service gRPC ────────────────────────────────────
+    this.logger.log(`Bearer token found (${token.slice(0, 20)}...)`);
+
+    // ── Step: Validate via auth-service gRPC ─────────────────────────────────
+    // WHY we call gRPC instead of verifying locally:
+    //   The JWT secret lives only in auth-service. The gateway never sees it.
+    //   This keeps the secret isolated to one service even as the system grows.
+    this.logger.log('→ auth-service.ValidateToken (gRPC) — verifying token');
     let payload: TokenPayload;
     try {
       payload = await this.authService.validateToken(token);
     } catch {
       // auth-service returns UNAUTHENTICATED for expired / invalid tokens.
       // Re-throw as UnauthorizedException so NestJS produces the right HTTP/GraphQL error.
+      this.logger.warn('✗ token validation failed — invalid or expired');
       throw new UnauthorizedException('Invalid or expired token');
     }
 
-    // ── 3. Attach payload to the request ─────────────────────────────────────
+    // ── Step: Attach payload to the request ──────────────────────────────────
     // req.user is a well-known convention. Resolvers access it via:
     //   @Context() ctx  →  ctx.req.user.userId
+    this.logger.log(`✓ token valid — userId=${payload.userId} email=${payload.email}`);
     const req = this.getRequest(context);
     (req as Record<string, unknown>).user = payload;
 

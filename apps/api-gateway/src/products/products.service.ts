@@ -34,7 +34,7 @@ import {
   type Product,
   type UpdateProductRequest,
 } from '@app/proto';
-import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 // ClientGrpc: the gRPC client object provided by @nestjs/microservices after
 //   ClientsModule wires it up. Think of it as a "connection factory" —
 //   you call getService() on it to get a typed proxy for a specific service.
@@ -77,6 +77,9 @@ interface ProductsGrpcService {
 // in a module's `providers:` array.
 @Injectable()
 export class ProductsClientService implements OnModuleInit {
+  // [GW] log prefix identifies gateway-side gRPC dispatch — matches README flow diagrams.
+  private readonly logger = new Logger('GW');
+
   // The typed gRPC service proxy. Undefined until onModuleInit() runs.
   // WHY typed as `ProductsGrpcService | undefined`:
   //   TypeScript strict-null-checks would flag a bare `ProductsGrpcService`
@@ -127,22 +130,28 @@ export class ProductsClientService implements OnModuleInit {
   // findAll — no arguments in the proto request, so we pass an empty object.
   // firstValueFrom(observable) subscribes once, takes the first emitted value,
   // unsubscribes, and resolves the returned Promise.
-  //
-  // WHY no `async` keyword here (or on any method below):
-  //   `async` is only needed when you use `await` inside the body.
-  //   firstValueFrom() already returns a Promise<T>, so returning it directly
-  //   is equivalent to `async` + `return await` without the extra wrapping.
-  findAll(): Promise<FindAllResponse> {
-    return firstValueFrom(this.grpc.findAll({}));
+  async findAll(): Promise<FindAllResponse> {
+    const t = Date.now();
+    this.logger.log('→ products-service.FindAll (gRPC)');
+    const result = await firstValueFrom(this.grpc.findAll({}));
+    this.logger.log(
+      `← products-service.FindAll  count=${result.products?.length ?? 0}  +${Date.now() - t}ms`,
+    );
+    return result;
   }
 
-  findOne(id: string): Promise<Product> {
-    // FindOneRequest shape: { id: string } — matches the proto message.
-    return firstValueFrom(this.grpc.findOne({ id }));
+  async findOne(id: string): Promise<Product> {
+    const t = Date.now();
+    this.logger.log(`→ products-service.FindOne (gRPC)  id=${id}`);
+    const result = await firstValueFrom(this.grpc.findOne({ id }));
+    this.logger.log(`← products-service.FindOne  id=${result.id}  +${Date.now() - t}ms`);
+    return result;
   }
 
-  createProduct(input: CreateProductInput): Promise<Product> {
-    return firstValueFrom(
+  async createProduct(input: CreateProductInput): Promise<Product> {
+    const t = Date.now();
+    this.logger.log(`→ products-service.CreateProduct (gRPC)  name=${input.name}`);
+    const result = await firstValueFrom(
       this.grpc.createProduct({
         name: input.name,
         description: input.description ?? '',
@@ -150,12 +159,16 @@ export class ProductsClientService implements OnModuleInit {
         stock: input.stock,
       }),
     );
+    this.logger.log(`← products-service.CreateProduct  id=${result.id}  +${Date.now() - t}ms`);
+    return result;
   }
 
-  updateProduct(input: UpdateProductInput): Promise<Product> {
+  async updateProduct(input: UpdateProductInput): Promise<Product> {
+    const t = Date.now();
+    this.logger.log(`→ products-service.UpdateProduct (gRPC)  id=${input.id}`);
     // Nullable fields fall back to empty string / 0 — the service preserves
     // existing values for fields that arrive as proto3 zero-values.
-    return firstValueFrom(
+    const result = await firstValueFrom(
       this.grpc.updateProduct({
         id: input.id,
         name: input.name ?? '',
@@ -164,10 +177,18 @@ export class ProductsClientService implements OnModuleInit {
         stock: input.stock ?? 0,
       }),
     );
+    this.logger.log(`← products-service.UpdateProduct  id=${result.id}  +${Date.now() - t}ms`);
+    return result;
   }
 
-  deleteProduct(id: string): Promise<DeleteProductResponse> {
-    return firstValueFrom(this.grpc.deleteProduct({ id }));
+  async deleteProduct(id: string): Promise<DeleteProductResponse> {
+    const t = Date.now();
+    this.logger.log(`→ products-service.DeleteProduct (gRPC)  id=${id}`);
+    const result = await firstValueFrom(this.grpc.deleteProduct({ id }));
+    this.logger.log(
+      `← products-service.DeleteProduct  success=${result.success}  +${Date.now() - t}ms`,
+    );
+    return result;
   }
 
   // ---------------------------------------------------------------------------
@@ -183,6 +204,7 @@ export class ProductsClientService implements OnModuleInit {
   //   or pipe it into a GraphQL subscription in the future.
   // ---------------------------------------------------------------------------
   listStream(): Observable<Product> {
+    this.logger.log('→ products-service.ListStream (gRPC server-streaming)');
     return this.grpc.listStream({});
   }
 }

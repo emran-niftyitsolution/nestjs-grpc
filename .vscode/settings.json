@@ -1,0 +1,13 @@
+{
+  // Tell the Biome VS Code extension to use THIS project's Biome binary
+  // instead of its own bundled one.
+  //
+  // WHY this matters:
+  //   The extension ships with its own Biome binary. If that binary is a
+  //   different version from the project's @biomejs/biome package, it may
+  //   ignore options like `unsafeParameterDecoratorsEnabled` (which controls
+  //   whether @Inject() parameter decorators are valid). Using the project
+  //   binary ensures the extension respects the same biome.json settings
+  //   that `bun run check` uses.
+  "biome.lspBin": "./node_modules/@biomejs/biome/bin/biome"
+}
