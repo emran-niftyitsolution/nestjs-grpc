@@ -1,0 +1,209 @@
+# ===========================================================================
+# docker-compose.yml  —  full local stack: Postgres + all four Nest apps.
+#
+# Services and how they talk to each other:
+#
+#   ┌──────────────────────────────────────────────────────────────────────┐
+#   │  Browser / curl                                                      │
+#   │       │  HTTP :5001 (published to host)                             │
+#   │       ▼                                                              │
+#   │  api-gateway                                                         │
+#   │       │  gRPC :50051  ──►  products-service  ──►  postgres :5432    │
+#   │       │  gRPC :50052  ──►  orders-service    ──►  postgres :5432    │
+#   │       │  gRPC :50053  ──►  auth-service      ──►  postgres :5432    │
+#   │                           orders-service     ──►  products-service  │
+#   │                            (S2S gRPC call for price validation)     │
+#   └──────────────────────────────────────────────────────────────────────┘
+#
+# Networking: Compose creates ONE default bridge network for this file.
+#   Every service is on that network and can reach every other service by
+#   its SERVICE NAME as a DNS hostname. That's why we set:
+#     PRODUCTS_GRPC_URL=products-service:50051  (not localhost)
+#     ORDERS_GRPC_URL=orders-service:50052
+#   "products-service" and "orders-service" are the keys under `services:`.
+#
+# Variable substitution: Compose auto-reads .env in the same directory and
+#   substitutes ${VAR:-default} inline. App-level env vars (PRODUCTS_GRPC_URL
+#   etc.) are set directly in the `environment:` blocks below — they are
+#   NOT read from .env by the apps themselves (no @nestjs/config in compose
+#   context). The `environment:` block IS what the container process sees.
+# ===========================================================================
+
+services:
+
+  # ==========================================================================
+  # postgres  —  the shared database.
+  # Both products-service and orders-service connect to this single instance.
+  # In a real production microservice deployment each service would have its
+  # OWN database — here we share one to keep the learning project simple.
+  # ==========================================================================
+  postgres:
+    image: postgres:18-alpine
+    container_name: nestjs-grpc-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app_password}
+      POSTGRES_DB: ${POSTGRES_DB:-ecommerce}
+    ports:
+      # Publish to the host so you can still connect with psql / Drizzle Studio
+      # from outside Docker (e.g. `bun run db:studio`).
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql
+    healthcheck:
+      # `depends_on: condition: service_healthy` in the app services uses this.
+      # They wait until Postgres is actually ready for connections, not just
+      # "container started". Without this, apps would race the DB and fail on
+      # the first migration run.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app} -d ${POSTGRES_DB:-ecommerce}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ==========================================================================
+  # products-service  —  gRPC server for product CRUD.
+  # ==========================================================================
+  products-service:
+    build:
+      # WHY context is `.` (repo root):
+      #   The Dockerfile COPYs libs/ which is outside the app's own directory.
+      #   Docker sends `context` to the daemon as the filesystem it can COPY
+      #   from. If we set context to `apps/products-service/`, Docker couldn't
+      #   see `libs/` and the COPY libs/ step would fail.
+      context: .
+      dockerfile: apps/products-service/Dockerfile
+    container_name: nestjs-grpc-products
+    restart: unless-stopped
+    environment:
+      # DATABASE_URL uses Docker's internal DNS: 'postgres' = the service above.
+      # NOT localhost — localhost inside the container is the container itself.
+      DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app_password}@postgres:5432/${POSTGRES_DB:-ecommerce}
+      # The gRPC server binds to this port inside the container.
+      PRODUCTS_GRPC_PORT: 50051
+    ports:
+      # Publish the gRPC port to the host. This lets you test products-service
+      # directly from the host (e.g. with grpcurl) without going through the
+      # gateway. In a pure Docker setup only the gateway would need this.
+      - "${PRODUCTS_GRPC_PORT:-50051}:50051"
+    depends_on:
+      postgres:
+        # `service_healthy` blocks until postgres's healthcheck passes.
+        # This prevents "connection refused" errors on the first migration run.
+        condition: service_healthy
+    healthcheck:
+      # WHY nc -z (TCP probe) and not the full gRPC health protocol:
+      #   The standard gRPC health check (grpc.health.v1.Health/Check) requires
+      #   either grpc-health-probe binary in the image or a custom implementation.
+      #   `nc -z HOST PORT` is a lightweight TCP connection check — it verifies
+      #   the port is open and accepting connections, which is sufficient to know
+      #   the gRPC server finished starting (including migrations).
+      #   nc is bundled in Alpine's busybox, so no extra installation needed.
+      test: ["CMD-SHELL", "nc -z localhost 50051 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      # start_period: grace time before failed checks count against retries.
+      # Covers the drizzle-kit migrate step that runs before the server starts.
+      start_period: 15s
+
+  # ==========================================================================
+  # orders-service  —  gRPC server for order CRUD + S2S call to products.
+  # ==========================================================================
+  orders-service:
+    build:
+      context: .
+      dockerfile: apps/orders-service/Dockerfile
+    container_name: nestjs-grpc-orders
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app_password}@postgres:5432/${POSTGRES_DB:-ecommerce}
+      ORDERS_GRPC_PORT: 50052
+      # PRODUCTS_GRPC_URL tells orders-service where to reach products-service.
+      # 'products-service' resolves via Docker's built-in DNS to the container
+      # started by the products-service service definition above.
+      PRODUCTS_GRPC_URL: products-service:50051
+    ports:
+      - "${ORDERS_GRPC_PORT:-50052}:50052"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # Now that products-service has a healthcheck, we can use service_healthy
+      # here too. This guarantees orders-service only starts after products-service
+      # is fully up — important for the S2S price validation call in createOrder.
+      products-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 50052 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  # ==========================================================================
+  # auth-service  —  gRPC server for user registration, login, JWT validation.
+  # ==========================================================================
+  auth-service:
+    build:
+      context: .
+      dockerfile: apps/auth-service/Dockerfile
+    container_name: nestjs-grpc-auth
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app_password}@postgres:5432/${POSTGRES_DB:-ecommerce}
+      AUTH_GRPC_PORT: 50053
+      # JWT_SECRET must be set to a strong random value in production.
+      # Generate one: openssl rand -hex 32
+      # In Compose, override this via a .env file or a secrets manager.
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-before-any-real-use}
+    ports:
+      # Publish to the host for direct testing (e.g. grpcurl from the host).
+      - "${AUTH_GRPC_PORT:-50053}:50053"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # Same nc -z TCP probe pattern as products-service and orders-service.
+      # Confirms the gRPC server finished starting AND the migration completed
+      # (migrations run before bun starts the server in the CMD).
+      test: ["CMD-SHELL", "nc -z localhost 50053 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  # ==========================================================================
+  # api-gateway  —  GraphQL HTTP server; gRPC client to all three services.
+  # ==========================================================================
+  api-gateway:
+    build:
+      context: .
+      dockerfile: apps/api-gateway/Dockerfile
+    container_name: nestjs-grpc-gateway
+    restart: unless-stopped
+    environment:
+      GATEWAY_PORT: 5001
+      # Docker DNS names for the three gRPC upstreams.
+      # These override the localhost fallbacks in each *.module.ts file —
+      # that's the entire purpose of the GRPC_URL pattern.
+      PRODUCTS_GRPC_URL: products-service:50051
+      ORDERS_GRPC_URL: orders-service:50052
+      AUTH_GRPC_URL: auth-service:50053
+    ports:
+      # Only the gateway publishes HTTP to the outside world.
+      # Compose maps host:5001 → container:5001.
+      - "${GATEWAY_PORT:-5001}:5001"
+    depends_on:
+      # All three gRPC upstreams must be healthy before the gateway starts.
+      # Without this, the gateway's gRPC channels would connect to nothing
+      # and the first GraphQL request would fail.
+      products-service:
+        condition: service_healthy
+      orders-service:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+
+# No top-level `volumes:` — we use a bind mount (./data/postgres) for Postgres,
+# so Docker doesn't manage any named volumes that could be silently deleted by
+# `docker compose down -v`.

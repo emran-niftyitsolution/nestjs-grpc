@@ -1,0 +1,105 @@
+# ------------------------------------------------------
+# THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+# ------------------------------------------------------
+
+type AuthPayloadType {
+  accessToken: String!
+  user: AuthUserType!
+}
+
+type AuthUserType {
+  createdAt: String!
+  email: String!
+  id: String!
+  name: String!
+}
+
+input CreateOrderInput {
+  productId: String!
+  quantity: Int!
+}
+
+input CreateProductInput {
+  description: String
+  name: String!
+  price: String!
+  stock: Int! = 0
+}
+
+type DeleteOrderResult {
+  success: Boolean!
+}
+
+type DeleteResult {
+  success: Boolean!
+}
+
+input LoginInput {
+  email: String!
+  password: String!
+}
+
+type Mutation {
+  createOrder(input: CreateOrderInput!): OrderType!
+  createProduct(input: CreateProductInput!): ProductType!
+  deleteOrder(id: String!): DeleteOrderResult!
+  deleteProduct(id: String!): DeleteResult!
+  login(input: LoginInput!): AuthPayloadType!
+  register(input: RegisterInput!): AuthPayloadType!
+  updateOrderStatus(input: UpdateOrderStatusInput!): OrderType!
+  updateProduct(input: UpdateProductInput!): ProductType!
+}
+
+type OrderType {
+  createdAt: String!
+  id: String!
+  productId: String!
+  quantity: Int!
+  status: String!
+  totalPrice: String!
+  updatedAt: String!
+}
+
+type ProductType {
+  createdAt: String!
+  description: String
+  id: String!
+  name: String!
+  price: String!
+  stock: Int!
+  updatedAt: String!
+}
+
+type Query {
+  me: TokenPayloadType!
+  order(id: String!): OrderType!
+  orders: [OrderType!]!
+  product(id: String!): ProductType!
+  products: [ProductType!]!
+  productsStream: [ProductType!]!
+}
+
+input RegisterInput {
+  email: String!
+  name: String!
+  password: String!
+}
+
+type TokenPayloadType {
+  email: String!
+  name: String!
+  userId: String!
+}
+
+input UpdateOrderStatusInput {
+  id: String!
+  status: String!
+}
+
+input UpdateProductInput {
+  description: String
+  id: String!
+  name: String
+  price: String
+  stock: Int
+}

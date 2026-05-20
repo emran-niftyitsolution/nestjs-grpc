@@ -1,0 +1,106 @@
+// ---------------------------------------------------------------------------
+// orders.proto  —  the gRPC contract for the Orders microservice.
+//
+// This file defines the service interface that BOTH sides must honour:
+//   • orders-service reads it at startup to know which handlers to register.
+//   • api-gateway reads it at startup to know which methods it can call.
+//   • Any OTHER future service (billing, shipping) reads it too.
+//
+// WHY a separate .proto file (not adding orders to products.proto):
+//   Separate files = separate domains. Each service owns its own contract.
+//   If we change the Orders API, products.proto is untouched, and vice versa.
+//   This is the microservices boundary principle applied to the proto layer.
+// ---------------------------------------------------------------------------
+
+syntax = "proto3";
+
+// package orders; — The gRPC package name. Must match the `package` field
+// we pass to ClientsModule/createMicroservice. All generated message types
+// are namespaced under this, avoiding collisions with the `products` package.
+package orders;
+
+// ---------------------------------------------------------------------------
+// SERVICE DEFINITION
+// ---------------------------------------------------------------------------
+
+service OrdersService {
+  // FindAll — returns every order in the system (no pagination yet).
+  rpc FindAll (FindAllRequest) returns (FindAllResponse);
+
+  // FindOne — fetch a single order by its UUID.
+  rpc FindOne (FindOneRequest) returns (Order);
+
+  // CreateOrder — the INTERESTING ONE:
+  //   orders-service validates the product exists (calls products-service via
+  //   gRPC), reads the price, computes total_price = price × quantity, then
+  //   inserts the order. This is the service-to-service call.
+  rpc CreateOrder (CreateOrderInput) returns (Order);
+
+  // UpdateOrderStatus — change the lifecycle status of an order
+  //   (pending → confirmed → shipped → delivered, or cancelled).
+  rpc UpdateOrderStatus (UpdateOrderStatusInput) returns (Order);
+
+  // DeleteOrder — remove an order record.
+  rpc DeleteOrder (DeleteOrderInput) returns (DeleteOrderResponse);
+}
+
+// ---------------------------------------------------------------------------
+// MESSAGE DEFINITIONS
+// ---------------------------------------------------------------------------
+
+// Order — mirrors the orders DB table.
+// Field numbering convention: stable, never reuse/renumber once deployed.
+//
+// WHY product_id is a plain string (no FK relation in proto):
+//   Proto3 doesn't have foreign-key concepts. The FK exists at the API level:
+//   orders-service calls products-service to validate the product exists before
+//   writing the order. The DB table also omits the FK constraint for the same
+//   reason — services own their data and communicate via APIs, not DB joins.
+message Order {
+  string id          = 1;
+  string product_id  = 2;  // UUID of the referenced product (no DB FK)
+  int32  quantity    = 3;
+  string total_price = 4;  // numeric stored as string — same reason as products.price
+  string status      = 5;  // "pending" | "confirmed" | "shipped" | "delivered" | "cancelled"
+  string created_at  = 6;  // ISO-8601 timestamp string
+  string updated_at  = 7;
+}
+
+// FindAllRequest — intentionally empty (no filters yet).
+// proto3 allows empty messages; they're common for parameterless operations.
+message FindAllRequest {}
+
+// FindAllResponse — wraps the repeated Order field in a message.
+// WHY not `returns (repeated Order)` directly:
+//   gRPC RPCs cannot return repeated fields directly — they must be wrapped in
+//   a message. This is a proto3 design constraint.
+message FindAllResponse {
+  repeated Order orders = 1;
+}
+
+message FindOneRequest {
+  string id = 1;
+}
+
+// CreateOrderInput — the only required fields when placing a new order.
+// orders-service derives total_price by calling products-service.
+// Status defaults to "pending" at the DB level.
+message CreateOrderInput {
+  string product_id = 1;  // which product to order
+  int32  quantity   = 2;  // how many units
+}
+
+// UpdateOrderStatusInput — deliberately only allows status changes.
+// Quantity and product cannot be changed after creation (business rule).
+message UpdateOrderStatusInput {
+  string id     = 1;
+  string status = 2;
+}
+
+message DeleteOrderInput {
+  string id = 1;
+}
+
+message DeleteOrderResponse {
+  bool success = 1;
+}

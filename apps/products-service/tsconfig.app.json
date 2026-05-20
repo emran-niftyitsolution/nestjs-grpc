@@ -1,0 +1,18 @@
+{
+  // ----------------------------------------------------------------------
+  // Per-app tsconfig for products-service. Same idea as the gateway's:
+  // inherit everything from the root config, override only outDir + drop
+  // declaration emit. The only difference between this and the gateway's
+  // config is the output directory — which is exactly why a shared base
+  // config is worth it.
+  // ----------------------------------------------------------------------
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "declaration": false,
+    // Separate output dir keeps this service's build artifacts independent
+    // from the gateway's (important once we build Docker images per app).
+    "outDir": "../../dist/apps/products-service"
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

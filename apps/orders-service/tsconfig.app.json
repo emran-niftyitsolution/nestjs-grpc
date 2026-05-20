@@ -1,0 +1,12 @@
+{
+  // Per-app tsconfig for orders-service — mirrors products-service exactly.
+  // Inherits all compiler flags from the root tsconfig.json and only adds the
+  // output directory so build artifacts land in the right place.
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "declaration": false,
+    "outDir": "../../dist/apps/orders-service"
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

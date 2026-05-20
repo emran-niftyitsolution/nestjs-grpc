@@ -1,0 +1,124 @@
+// ---------------------------------------------------------------------------
+// auth.proto  —  the gRPC service contract for AuthService.
+//
+// WHAT THIS FILE DEFINES:
+//   One service (AuthService) with three RPCs:
+//     Register      — create a new user account, return JWT + user info
+//     Login         — authenticate existing user, return JWT + user info
+//     ValidateToken — verify a JWT and return its decoded payload
+//
+// WHO USES THIS FILE:
+//   auth-service  (server):  NestFactory.createMicroservice() reads it to
+//                             register @GrpcMethod handlers.
+//   api-gateway   (client):  ClientsModule reads it to know the message
+//                             shapes when calling auth-service over gRPC.
+//
+// WHY EACH RPC EXISTS:
+//   Register / Login  → produce a JWT. The JWT is what protects other RPCs.
+//   ValidateToken     → the gateway calls this to verify Bearer tokens on
+//                       incoming GraphQL requests without knowing the secret.
+//                       The secret lives only in auth-service.
+// ---------------------------------------------------------------------------
+
+syntax = "proto3";
+
+// `package auth;` — this string MUST match AUTH_PACKAGE in libs/proto/src/index.ts.
+// It namespaces the service so the gRPC runtime knows which service definition
+// to use when multiple proto packages are loaded simultaneously.
+package auth;
+
+// ===========================================================================
+// SERVICE DEFINITION
+// ===========================================================================
+
+service AuthService {
+  // Register — creates a new user. Returns an AuthResponse containing a
+  // signed JWT and the newly created user's public profile.
+  //
+  // Error cases (the service throws RpcException with these codes):
+  //   ALREADY_EXISTS (6)  — the email address is already registered.
+  //   INTERNAL      (13)  — database failure.
+  rpc Register (RegisterRequest) returns (AuthResponse);
+
+  // Login — authenticates an existing user. Same response shape as Register
+  // so the client can handle both uniformly.
+  //
+  // Error cases:
+  //   NOT_FOUND     (5)  — no account with that email.
+  //   UNAUTHENTICATED(16) — email exists but password is wrong.
+  rpc Login (LoginRequest) returns (AuthResponse);
+
+  // ValidateToken — verifies a JWT signature and expiry without a DB lookup.
+  // Returns the decoded payload so callers get userId/email/name.
+  //
+  // WHY THIS IS AN RPC (not just local JWT verification in the gateway):
+  //   The JWT signing secret lives ONLY in auth-service. Keeping it there
+  //   means the gateway never has to manage the secret — it just calls this
+  //   RPC. One service owns one concern.
+  //
+  // Error cases:
+  //   UNAUTHENTICATED (16) — invalid signature or token is expired.
+  rpc ValidateToken (ValidateTokenRequest) returns (TokenPayload);
+}
+
+// ===========================================================================
+// REQUEST MESSAGES
+// ===========================================================================
+
+message RegisterRequest {
+  string email    = 1; // user's email — must be unique across all accounts
+  string password = 2; // plain-text; auth-service hashes it with bcrypt
+  string name     = 3; // display name (e.g. "Alice Smith")
+}
+
+message LoginRequest {
+  string email    = 1;
+  string password = 2; // plain-text; auth-service verifies against stored hash
+}
+
+message ValidateTokenRequest {
+  // The raw JWT string from the Authorization: Bearer <token> header.
+  string token = 1;
+}
+
+// ===========================================================================
+// RESPONSE MESSAGES
+// ===========================================================================
+
+// AuthResponse — returned by both Register and Login.
+// Contains the access token plus a stripped public view of the user
+// (no password hash, no internal DB fields).
+message AuthResponse {
+  // The signed JWT. The client sends this in every subsequent request as:
+  //   Authorization: Bearer <access_token>
+  //
+  // NOTE on naming: proto3 field names are snake_case. @grpc/proto-loader
+  // converts them to camelCase in TypeScript: access_token → accessToken.
+  string access_token = 1;
+
+  // The public user profile. Embedded so the client can immediately populate
+  // UI state (username, email) without a second "get me" request.
+  AuthUser user = 2;
+}
+
+// AuthUser — public profile fields, safe to return to any caller.
+// Deliberately excludes passwordHash and any internal DB columns.
+message AuthUser {
+  string id         = 1;
+  string email      = 2;
+  string name       = 3;
+  // ISO-8601 timestamp string — proto3 has no native Date type.
+  // created_at → createdAt after @grpc/proto-loader camelCase conversion.
+  string created_at = 4;
+}
+
+// TokenPayload — the decoded body of a valid JWT, returned by ValidateToken.
+// The gateway attaches this to the request context after guard validation
+// so resolvers can access `req.user.userId` etc.
+message TokenPayload {
+  // user_id → userId after proto-loader conversion.
+  // Contains the UUID primary key from the users table.
+  string user_id = 1;
+  string email   = 2;
+  string name    = 3;
+}

@@ -1,0 +1,42 @@
+# ===========================================================================
+# .dockerignore  —  files Docker EXCLUDES from the build context.
+#
+# WHY this matters: when you run `docker build` or `docker compose up --build`,
+# Docker sends the entire build context (everything in the folder) to the
+# Docker daemon before the first RUN instruction executes. Without this file,
+# that includes node_modules (GB of binaries), DB data files, and secrets.
+#
+# Consequence: without .dockerignore a simple `docker build` can upload
+# hundreds of MB before doing anything useful. With it, only the ~1 MB of
+# source files and configs travel across the pipe.
+#
+# The pattern rules are identical to .gitignore.
+# ===========================================================================
+
+# The biggest offender: contains OS-specific compiled binaries (e.g. .node
+# files, native addons). We run `bun install` INSIDE the image instead, which
+# produces the correct Linux binaries for the container's CPU/OS.
+node_modules
+
+# Compiled TypeScript output — we run source directly with Bun.
+dist
+
+# PostgreSQL bind-mount data — multi-GB of binary DB files, never needed.
+data
+
+# .env contains real secrets (passwords, URLs). The Docker image must NOT bake
+# them in — they are injected at runtime via `environment:` in compose or
+# docker run -e. If the image contained .env, pushing it to a registry would
+# leak the secrets permanently (layers are content-addressed, not deleteable).
+.env
+.env.*
+
+# Git internals (can be large in repos with history).
+.git
+.gitignore
+
+# Log files from dev sessions.
+*.log
+
+# OS noise.
+.DS_Store

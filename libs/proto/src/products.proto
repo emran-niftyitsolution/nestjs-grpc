@@ -1,0 +1,183 @@
+// ===========================================================================
+// products.proto  —  the CONTRACT between api-gateway and products-service.
+//
+// WHAT IS A .proto FILE?
+//   Protocol Buffers (protobuf) is Google's language-neutral, binary
+//   serialization format. A .proto file is the Interface Definition Language
+//   (IDL) for that format — it describes:
+//     • SERVICES  — what remote procedures (RPCs) are available
+//     • MESSAGES  — the request/response data shapes
+//
+// WHY NOT JUST USE JSON/REST?
+//   • Binary format → 3–10× smaller payloads than JSON
+//   • Schema is enforced — mismatched types fail at the boundary, not deep in
+//     application code
+//   • Strongly typed contract shared by every language that uses this service
+//   • Supports streaming natively (added in Step 9)
+//
+// WHY THIS FILE LIVES IN libs/proto (not inside either app):
+//   The gateway (Step 5) needs it to build a CLIENT.
+//   The products-service needs it to register a SERVER.
+//   One file = one source of truth. If they drift apart, gRPC refuses to
+//   connect. Keeping it in the shared lib makes that impossible.
+// ===========================================================================
+
+// proto3 is the current version of the syntax. Key proto3 differences from
+// proto2: all fields are optional by default, no `required` keyword, simpler
+// default values. Always use proto3 for new services.
+syntax = "proto3";
+
+// The package namespace. Must match the `package` option in both apps' gRPC
+// config (`PRODUCTS_PACKAGE = 'products'` in libs/proto/src/index.ts).
+// It scopes message/service names so they don't clash if multiple protos are
+// loaded (e.g. when we add orders in Step 7: `package orders;`).
+package products;
+
+// ---------------------------------------------------------------------------
+// SERVICE DEFINITION — the remote interface exposed by products-service.
+//
+// Each `rpc` line is ONE remote procedure call:
+//   rpc MethodName (RequestMessage) returns (ResponseMessage);
+//
+// All RPCs here are UNARY (one request → one response). Streaming variants
+// (server-streaming, client-streaming, bidirectional) are added in Step 9.
+// ---------------------------------------------------------------------------
+service ProductsService {
+  // List all products. Returns an empty list if there are none yet.
+  rpc FindAll (FindAllRequest) returns (FindAllResponse);
+
+  // Get a single product by UUID. In Step 6 we add proper NOT_FOUND errors.
+  rpc FindOne (FindOneRequest) returns (Product);
+
+  // Create a new product. Returns the created product with its generated UUID.
+  rpc CreateProduct (CreateProductRequest) returns (Product);
+
+  // Update an existing product. Returns the updated product.
+  rpc UpdateProduct (UpdateProductRequest) returns (Product);
+
+  // Delete a product by UUID. Returns a success flag.
+  rpc DeleteProduct (DeleteProductRequest) returns (DeleteProductResponse);
+
+  // ---------------------------------------------------------------------------
+  // SERVER-STREAMING RPC (Step 9) — the `stream` keyword before the return type
+  // is what makes this different from every other RPC above.
+  //
+  // UNARY vs SERVER-STREAMING:
+  //   Unary:            client sends ONE request  → server sends ONE response
+  //   Server-streaming: client sends ONE request  → server sends N responses
+  //                     (the stream stays open until the server calls end())
+  //
+  // WHY stream instead of FindAll (which also returns all products):
+  //   FindAll loads ALL rows into memory, wraps them in a single FindAllResponse
+  //   message, and sends the whole thing at once. If you have 100k products that
+  //   is a large single allocation on both sides.
+  //
+  //   ListStream pushes each Product as a separate frame the moment it's ready.
+  //   The client can start processing product #1 while #2 is still being fetched.
+  //   This matters for: large datasets, real-time feeds, progress UIs, and
+  //   backpressure (the client can pause consumption by not reading the stream).
+  //
+  // IN PRACTICE for this project: the behaviour difference is invisible at our
+  // data volumes — this is purely to learn the streaming RPC pattern.
+  // ---------------------------------------------------------------------------
+  rpc ListStream (ListStreamRequest) returns (stream Product);
+}
+
+// ---------------------------------------------------------------------------
+// MESSAGE DEFINITIONS — the data shapes used by the RPCs above.
+//
+// KEY RULES about field numbers (= 1, = 2, ...):
+//   • Each field has a UNIQUE positive integer "field tag" used in the binary
+//     encoding — NOT the field name. This is how protobuf stays backward-
+//     compatible: you can rename a field, but its number must never change.
+//   • Once a service is in production, field numbers are PERMANENT. Removing
+//     a field → mark it `reserved`. Changing a type → add a new field number.
+//   • For a learner project they're just sequential, but remember they matter.
+//
+// TYPES USED HERE:
+//   string  — UTF-8 text
+//   int32   — 32-bit signed integer
+//   bool    — true/false
+//   repeated — a list (zero or more). Maps to an array in TypeScript.
+// ---------------------------------------------------------------------------
+
+// A single product record — mirrors the Drizzle schema but over the wire.
+message Product {
+  string id          = 1;
+  string name        = 2;
+  string description = 3;
+
+  // WHY price is a string and not float/double:
+  //   Protobuf's float/double use IEEE 754 binary representation, which
+  //   CANNOT represent 0.10 exactly. Sending 999.99 as a float might arrive
+  //   as 999.9899978637695. We serialize price as a string ("999.99") and
+  //   parse it on both ends — same reason we store it as numeric(10,2) in PG.
+  //   An alternative for high-volume systems is `int64 price_cents = 4`
+  //   (e.g. 99999 for $999.99), but string is easier to read while learning.
+  string price       = 4;
+
+  int32  stock       = 5;
+
+  // Timestamps as ISO 8601 strings ("2026-05-19T10:00:00.000Z").
+  // proto has no built-in timestamp type in proto3 core (there is a
+  // google.protobuf.Timestamp well-known type, but it adds a dependency
+  // and complexity we don't need at this learning stage).
+  string created_at  = 6;
+  string updated_at  = 7;
+}
+
+// --- FindAll ---
+// Empty request message — no filters yet.
+// In Step 7 we can add pagination fields (page, per_page) here without
+// breaking existing callers, because proto3 ignores unknown fields.
+message FindAllRequest {}
+
+// --- ListStream (Step 9) ---
+// Empty request — same intent as FindAllRequest but for the streaming RPC.
+// Kept as a separate message (rather than reusing FindAllRequest) so the two
+// RPCs can evolve independently: e.g. ListStream could later add a
+// `string cursor = 1` field for resumable streaming without touching FindAll.
+message ListStreamRequest {}
+
+message FindAllResponse {
+  // `repeated` = a list. An empty list is valid (zero products).
+  repeated Product products = 1;
+}
+
+// --- FindOne ---
+message FindOneRequest {
+  string id = 1;
+}
+
+// --- CreateProduct ---
+// Note: no `id`, `created_at`, `updated_at` — those are generated server-side.
+message CreateProductRequest {
+  string name        = 1;
+  string description = 2;
+  string price       = 3;
+  int32  stock       = 4;
+}
+
+// --- UpdateProduct ---
+// Includes `id` so the server knows which record to update.
+// In a production API you might use a separate `UpdateMask` to indicate
+// which fields to update (partial update), but a full-replace is simpler
+// for learning.
+message UpdateProductRequest {
+  string id          = 1;
+  string name        = 2;
+  string description = 3;
+  string price       = 4;
+  int32  stock       = 5;
+}
+
+// --- DeleteProduct ---
+message DeleteProductRequest {
+  string id = 1;
+}
+
+message DeleteProductResponse {
+  // Simple success flag. In Step 6 we use gRPC status codes to signal
+  // "not found" instead of returning success: false.
+  bool success = 1;
+}

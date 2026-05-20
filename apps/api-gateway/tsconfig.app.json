@@ -1,0 +1,26 @@
+{
+  // ----------------------------------------------------------------------
+  // Per-app tsconfig for api-gateway.
+  //
+  // It `extends` the root config so ALL the important compiler settings
+  // (decorators, module resolution, the @app/proto path alias) are inherited.
+  // We only override what is app-specific: where compiled JS goes, and that
+  // this app doesn't need .d.ts files.
+  //
+  // Used by `nest build api-gateway` (Step 8 / production). In dev Bun runs
+  // the .ts directly and just reads the inherited compiler flags.
+  // ----------------------------------------------------------------------
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    // Apps are deployed as JS, not consumed as a library — no need to emit
+    // type declarations. Turning this off speeds up builds.
+    "declaration": false,
+    // Build output for THIS app, isolated under dist/apps/api-gateway so the
+    // two apps never overwrite each other's compiled files.
+    "outDir": "../../dist/apps/api-gateway"
+  },
+  // Only compile this app's own source...
+  "include": ["src/**/*"],
+  // ...and never descend into deps or previous build output.
+  "exclude": ["node_modules", "dist"]
+}

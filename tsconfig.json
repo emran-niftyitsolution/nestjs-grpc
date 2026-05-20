@@ -1,0 +1,76 @@
+{
+  // ----------------------------------------------------------------------
+  // ROOT tsconfig.json  —  the base TypeScript config every app/lib extends.
+  //
+  // In a monorepo you keep ONE base config here and each app/lib has a tiny
+  // tsconfig that `extends` this and only overrides outDir. That way compiler
+  // behaviour is identical everywhere and you change it in one place.
+  //
+  // NOTE: tsconfig.json is JSONC — comments are allowed (TypeScript and Bun
+  // both parse them). package.json and nest-cli.json are NOT — keep those
+  // comment-free or tools will fail to parse them.
+  // ----------------------------------------------------------------------
+  "compilerOptions": {
+    // "nodenext" = use Node's modern ESM/CJS resolution rules. This is the
+    // current recommended setting and matches how Bun/Node resolve packages.
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "resolvePackageJsonExports": true,
+
+    // Lets `import x from 'cjs-pkg'` interop cleanly with CommonJS packages
+    // (many Node libs still ship CJS). Avoids `* as` import noise.
+    "esModuleInterop": true,
+
+    // Each file is transpiled in isolation (no cross-file type info at emit).
+    // Required by fast single-file transpilers like Bun's — keeps builds fast
+    // and portable.
+    "isolatedModules": true,
+
+    // Emit .d.ts type declarations. Apps override this to `false` (they don't
+    // need declarations); the proto LIB keeps it `true` so consumers get types.
+    "declaration": true,
+    "removeComments": true,
+
+    // THE TWO LINES THAT MAKE NESTJS WORK:
+    // NestJS is built on decorators (@Module, @Injectable, @Get, gRPC
+    // @GrpcMethod ...). `experimentalDecorators` enables the syntax;
+    // `emitDecoratorMetadata` emits the runtime type info Nest's DI reads to
+    // know WHAT to inject. Bun reads both of these flags from this file — that
+    // is precisely why Bun can run NestJS with no build step.
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2023",
+    "sourceMap": true,
+    "outDir": "./dist",
+
+    // baseUrl + paths power the @app/proto alias below. baseUrl is the root
+    // these non-relative imports resolve against. These resolve relative to
+    // THIS file even when an app's tsconfig extends it.
+    "baseUrl": "./",
+
+    "incremental": true,
+    // Skip type-checking of .d.ts files in node_modules — big speed win, and
+    // third-party types are not our problem to fix.
+    "skipLibCheck": true,
+    "strictNullChecks": true,
+    "forceConsistentCasingInFileNames": true,
+
+    // Loosened on purpose for a learning repo so the focus stays on gRPC/Nest
+    // mechanics rather than fighting the strictest type rules.
+    "noImplicitAny": false,
+    "strictBindCallApply": false,
+    "noFallthroughCasesInSwitch": false,
+
+    // THE MONOREPO IMPORT ALIAS.
+    // Lets BOTH apps write  import { ... } from '@app/proto'
+    // instead of brittle  import { ... } from '../../../libs/proto/src'.
+    // The shared gRPC contract lives in libs/proto and is consumed by the
+    // gateway (client) and products-service (server) — see libs/proto/src.
+    "paths": {
+      "@app/proto": ["libs/proto/src"],
+      "@app/proto/*": ["libs/proto/src/*"]
+    }
+  }
+}
