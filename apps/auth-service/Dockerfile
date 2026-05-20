@@ -3,7 +3,7 @@
 #
 # Identical structure to orders-service/Dockerfile. The differences:
 #   - drizzle.auth.config.ts instead of drizzle.orders.config.ts
-#   - Port 50053 (auth-service) instead of 50052
+#   - Port 50051 (auth-service) instead of 50052
 #   - Migration command uses --config drizzle.auth.config.ts
 #   - Does NOT copy apps/products-service or apps/orders-service — only this
 #     service's source lands in the image, keeping the build context tight.
@@ -43,7 +43,7 @@ COPY libs/ ./libs/
 COPY apps/auth-service/ ./apps/auth-service/
 
 # Document the gRPC port this container listens on.
-EXPOSE 50053
+EXPOSE 50051
 
 # Start: migrate the users table first, then start the gRPC server.
 # `sh -c "cmd1 && cmd2"` — if migrations fail, the server does NOT start,

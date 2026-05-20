@@ -8,8 +8,8 @@
 //   4. The JWT guard (JwtAuthGuard) — declared in providers so DI can inject
 //      AuthClientService into it
 //
-// The gRPC client connects to auth-service on port 50053 (default for dev).
-// In Docker, AUTH_GRPC_URL is set to 'auth-service:50053' by docker-compose
+// The gRPC client connects to auth-service on port 50051 (default for dev).
+// In Docker, AUTH_GRPC_URL is set to 'auth-service:50051' by docker-compose
 // so Docker's internal DNS routes to the right container.
 // ---------------------------------------------------------------------------
 
@@ -35,9 +35,9 @@ import { JwtAuthGuard } from './jwt-auth.guard';
           protoPath: AUTH_PROTO_PATH,
 
           // AUTH_GRPC_URL lets the URL be overridden for Docker without code changes.
-          // Dev:    AUTH_GRPC_URL unset → falls back to localhost:50053
-          // Docker: docker-compose sets AUTH_GRPC_URL=auth-service:50053
-          url: process.env.AUTH_GRPC_URL ?? `localhost:${process.env.AUTH_GRPC_PORT ?? 50053}`,
+          // Dev:    AUTH_GRPC_URL unset → falls back to localhost:50051
+          // Docker: docker-compose sets AUTH_GRPC_URL=auth-service:50051
+          url: process.env.AUTH_GRPC_URL ?? `localhost:${process.env.AUTH_GRPC_PORT ?? 50051}`,
         },
       },
     ]),

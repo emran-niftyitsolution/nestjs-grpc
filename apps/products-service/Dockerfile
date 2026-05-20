@@ -29,7 +29,7 @@ COPY libs/ ./libs/
 COPY apps/products-service/ ./apps/products-service/
 
 # gRPC port (not HTTP — there is no HTTP server in this service).
-EXPOSE 50051
+EXPOSE 50052
 
 # ---------------------------------------------------------------------------
 # CMD — run migrations then start the gRPC server.

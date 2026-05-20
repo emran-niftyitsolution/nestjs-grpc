@@ -19,10 +19,10 @@ import { OrdersClientService } from './orders.service';
           package: ORDERS_PACKAGE,
           protoPath: ORDERS_PROTO_PATH,
           // Same URL override pattern as products.module.ts:
-          //   Dev (no Docker): falls back to localhost:50052
-          //   Docker: docker-compose sets ORDERS_GRPC_URL=orders-service:50052
+          //   Dev (no Docker): falls back to localhost:50053
+          //   Docker: docker-compose sets ORDERS_GRPC_URL=orders-service:50053
           //     where 'orders-service' is the Docker DNS name for that container.
-          url: process.env.ORDERS_GRPC_URL ?? `localhost:${process.env.ORDERS_GRPC_PORT ?? 50052}`,
+          url: process.env.ORDERS_GRPC_URL ?? `localhost:${process.env.ORDERS_GRPC_PORT ?? 50053}`,
         },
       },
     ]),

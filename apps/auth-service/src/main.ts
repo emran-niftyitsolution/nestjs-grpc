@@ -4,12 +4,12 @@
 // Identical pattern to products-service/main.ts and orders-service/main.ts:
 //   • NestFactory.createMicroservice() — no HTTP, pure gRPC
 //   • Transport.GRPC with auth.proto
-//   • Listens on AUTH_GRPC_PORT (default 50053)
+//   • Listens on AUTH_GRPC_PORT (default 50051)
 //
-// WHY port 50053:
-//   products-service: 50051
-//   orders-service:   50052
-//   auth-service:     50053
+// Port assignments (auth comes first as the foundational identity service):
+//   auth-service:     50051
+//   products-service: 50052
+//   orders-service:   50053
 //   Each gRPC server needs a unique host port in dev. In Docker each container
 //   has its own network namespace, so all could use 50051 internally — the host
 //   port mapping is only relevant for direct host-to-container testing.
@@ -32,7 +32,7 @@ const grpcOptions: GrpcOptions = {
     // are plain strings exported from libs/proto/src/index.ts.
     package: AUTH_PACKAGE as string,
     protoPath: AUTH_PROTO_PATH as string,
-    url: `0.0.0.0:${process.env.AUTH_GRPC_PORT ?? 50053}`,
+    url: `0.0.0.0:${process.env.AUTH_GRPC_PORT ?? 50051}`,
   },
 };
 
@@ -44,7 +44,7 @@ async function bootstrap() {
 
   await app.listen();
   console.log(
-    `[auth-service] gRPC listening on 0.0.0.0:${process.env.AUTH_GRPC_PORT ?? 50053}`,
+    `[auth-service] gRPC listening on 0.0.0.0:${process.env.AUTH_GRPC_PORT ?? 50051}`,
   );
 }
 

@@ -47,9 +47,9 @@ void ORDERS_PROTO_PATH;
           package: PRODUCTS_PACKAGE,
           protoPath: PRODUCTS_PROTO_PATH,
           // PRODUCTS_GRPC_URL override: same pattern as api-gateway uses.
-          // Dev (no Docker):  localhost:50051 (PRODUCTS_GRPC_PORT fallback)
-          // Docker: docker-compose sets PRODUCTS_GRPC_URL=products-service:50051
-          url: process.env.PRODUCTS_GRPC_URL ?? `localhost:${process.env.PRODUCTS_GRPC_PORT ?? 50051}`,
+          // Dev (no Docker):  localhost:50052 (PRODUCTS_GRPC_PORT fallback)
+          // Docker: docker-compose sets PRODUCTS_GRPC_URL=products-service:50052
+          url: process.env.PRODUCTS_GRPC_URL ?? `localhost:${process.env.PRODUCTS_GRPC_PORT ?? 50052}`,
         },
       },
     ]),

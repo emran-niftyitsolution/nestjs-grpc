@@ -8,9 +8,9 @@
 #   │       │  HTTP :5001 (published to host)                             │
 #   │       ▼                                                              │
 #   │  api-gateway                                                         │
-#   │       │  gRPC :50051  ──►  products-service  ──►  postgres :5432    │
-#   │       │  gRPC :50052  ──►  orders-service    ──►  postgres :5432    │
-#   │       │  gRPC :50053  ──►  auth-service      ──►  postgres :5432    │
+#   │       │  gRPC :50051  ──►  auth-service      ──►  postgres :5432    │
+#   │       │  gRPC :50052  ──►  products-service  ──►  postgres :5432    │
+#   │       │  gRPC :50053  ──►  orders-service    ──►  postgres :5432    │
 #   │                           orders-service     ──►  products-service  │
 #   │                            (S2S gRPC call for price validation)     │
 #   └──────────────────────────────────────────────────────────────────────┘
@@ -18,8 +18,9 @@
 # Networking: Compose creates ONE default bridge network for this file.
 #   Every service is on that network and can reach every other service by
 #   its SERVICE NAME as a DNS hostname. That's why we set:
-#     PRODUCTS_GRPC_URL=products-service:50051  (not localhost)
-#     ORDERS_GRPC_URL=orders-service:50052
+#     AUTH_GRPC_URL=auth-service:50051          (not localhost)
+#     PRODUCTS_GRPC_URL=products-service:50052
+#     ORDERS_GRPC_URL=orders-service:50053
 #   "products-service" and "orders-service" are the keys under `services:`.
 #
 # Variable substitution: Compose auto-reads .env in the same directory and
@@ -80,12 +81,12 @@ services:
       # NOT localhost — localhost inside the container is the container itself.
       DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app_password}@postgres:5432/${POSTGRES_DB:-ecommerce}
       # The gRPC server binds to this port inside the container.
-      PRODUCTS_GRPC_PORT: 50051
+      PRODUCTS_GRPC_PORT: 50052
     ports:
       # Publish the gRPC port to the host. This lets you test products-service
       # directly from the host (e.g. with grpcurl) without going through the
       # gateway. In a pure Docker setup only the gateway would need this.
-      - "${PRODUCTS_GRPC_PORT:-50051}:50051"
+      - "${PRODUCTS_GRPC_PORT:-50052}:50052"
     depends_on:
       postgres:
         # `service_healthy` blocks until postgres's healthcheck passes.
@@ -99,7 +100,7 @@ services:
       #   the port is open and accepting connections, which is sufficient to know
       #   the gRPC server finished starting (including migrations).
       #   nc is bundled in Alpine's busybox, so no extra installation needed.
-      test: ["CMD-SHELL", "nc -z localhost 50051 || exit 1"]
+      test: ["CMD-SHELL", "nc -z localhost 50052 || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -118,13 +119,13 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app_password}@postgres:5432/${POSTGRES_DB:-ecommerce}
-      ORDERS_GRPC_PORT: 50052
+      ORDERS_GRPC_PORT: 50053
       # PRODUCTS_GRPC_URL tells orders-service where to reach products-service.
       # 'products-service' resolves via Docker's built-in DNS to the container
       # started by the products-service service definition above.
-      PRODUCTS_GRPC_URL: products-service:50051
+      PRODUCTS_GRPC_URL: products-service:50052
     ports:
-      - "${ORDERS_GRPC_PORT:-50052}:50052"
+      - "${ORDERS_GRPC_PORT:-50053}:50053"
     depends_on:
       postgres:
         condition: service_healthy
@@ -134,7 +135,7 @@ services:
       products-service:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 50052 || exit 1"]
+      test: ["CMD-SHELL", "nc -z localhost 50053 || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -151,14 +152,14 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app_password}@postgres:5432/${POSTGRES_DB:-ecommerce}
-      AUTH_GRPC_PORT: 50053
+      AUTH_GRPC_PORT: 50051
       # JWT_SECRET must be set to a strong random value in production.
       # Generate one: openssl rand -hex 32
       # In Compose, override this via a .env file or a secrets manager.
       JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-before-any-real-use}
     ports:
       # Publish to the host for direct testing (e.g. grpcurl from the host).
-      - "${AUTH_GRPC_PORT:-50053}:50053"
+      - "${AUTH_GRPC_PORT:-50051}:50051"
     depends_on:
       postgres:
         condition: service_healthy
@@ -166,7 +167,7 @@ services:
       # Same nc -z TCP probe pattern as products-service and orders-service.
       # Confirms the gRPC server finished starting AND the migration completed
       # (migrations run before bun starts the server in the CMD).
-      test: ["CMD-SHELL", "nc -z localhost 50053 || exit 1"]
+      test: ["CMD-SHELL", "nc -z localhost 50051 || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -186,9 +187,9 @@ services:
       # Docker DNS names for the three gRPC upstreams.
       # These override the localhost fallbacks in each *.module.ts file —
       # that's the entire purpose of the GRPC_URL pattern.
-      PRODUCTS_GRPC_URL: products-service:50051
-      ORDERS_GRPC_URL: orders-service:50052
-      AUTH_GRPC_URL: auth-service:50053
+      AUTH_GRPC_URL: auth-service:50051
+      PRODUCTS_GRPC_URL: products-service:50052
+      ORDERS_GRPC_URL: orders-service:50053
     ports:
       # Only the gateway publishes HTTP to the outside world.
       # Compose maps host:5001 → container:5001.

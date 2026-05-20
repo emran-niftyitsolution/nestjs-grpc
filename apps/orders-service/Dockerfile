@@ -3,7 +3,7 @@
 #
 # Identical structure to products-service/Dockerfile. The differences:
 #   - drizzle.orders.config.ts instead of drizzle.config.ts
-#   - Port 50052 (orders-service) instead of 50051 (products-service)
+#   - Port 50053 (orders-service) instead of 50052 (products-service)
 #   - Migration command uses --config drizzle.orders.config.ts
 #
 # WHY separate drizzle config files (one per service):
@@ -30,6 +30,6 @@ COPY drizzle.orders.config.ts ./
 COPY libs/ ./libs/
 COPY apps/orders-service/ ./apps/orders-service/
 
-EXPOSE 50052
+EXPOSE 50053
 
 CMD ["sh", "-c", "bunx drizzle-kit migrate --config drizzle.orders.config.ts && bun apps/orders-service/src/main.ts"]

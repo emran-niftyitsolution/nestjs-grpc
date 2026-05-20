@@ -55,9 +55,8 @@ const grpcOptions: GrpcOptions = {
     protoPath: PRODUCTS_PROTO_PATH as string,
 
     // Bind to all interfaces (0.0.0.0) so containers in Docker (Step 8) can
-    // reach this service. In dev the gateway connects to localhost:50051.
-    // Port 50051 is the de-facto gRPC convention (like 80/443 for HTTP).
-    url: `0.0.0.0:${process.env.PRODUCTS_GRPC_PORT ?? 50051}`,
+    // reach this service. In dev the gateway connects to localhost:50052.
+    url: `0.0.0.0:${process.env.PRODUCTS_GRPC_PORT ?? 50052}`,
   },
 };
 
@@ -76,7 +75,7 @@ async function bootstrap() {
   await app.listen();
 
   console.log(
-    `[products-service] gRPC listening on 0.0.0.0:${process.env.PRODUCTS_GRPC_PORT ?? 50051}`,
+    `[products-service] gRPC listening on 0.0.0.0:${process.env.PRODUCTS_GRPC_PORT ?? 50052}`,
   );
 }
 

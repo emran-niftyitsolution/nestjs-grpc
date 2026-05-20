@@ -8,7 +8,7 @@
 //   1. Apollo Server receives the HTTP POST to /graphql
 //   2. NestJS GraphQL routes it to ProductsResolver.findAll()
 //   3. Resolver calls ProductsService.findAll()    ← this file
-//   4. This service calls products-service via gRPC over TCP:50051
+//   4. This service calls products-service via gRPC over TCP:50052
 //   5. products-service returns protobuf bytes
 //   6. @grpc/grpc-js deserializes them into a plain JS object
 //   7. The result bubbles back up through the resolver to Apollo

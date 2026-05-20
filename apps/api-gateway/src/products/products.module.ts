@@ -58,18 +58,18 @@ import { ProductsClientService } from './products.service';
           // PRODUCTS_GRPC_URL lets the URL be overridden without rebuilding.
           //
           // In dev (no Docker): PRODUCTS_GRPC_URL is unset → falls back to
-          //   localhost:50051 (or whatever PRODUCTS_GRPC_PORT is set to).
+          //   localhost:50052 (or whatever PRODUCTS_GRPC_PORT is set to).
           //
           // In Docker: docker-compose sets
-          //   PRODUCTS_GRPC_URL=products-service:50051
+          //   PRODUCTS_GRPC_URL=products-service:50052
           //   where 'products-service' is Docker's DNS name for the container
           //   (the service name in docker-compose.yml). Containers on the same
           //   Compose network resolve each other by service name automatically.
           //
-          // WHY not hardcode 'products-service:50051' here:
+          // WHY not hardcode 'products-service:50052' here:
           //   The app runs in both dev (localhost) and Docker (DNS name). A
           //   single env var lets you switch context with zero code changes.
-          url: process.env.PRODUCTS_GRPC_URL ?? `localhost:${process.env.PRODUCTS_GRPC_PORT ?? 50051}`,
+          url: process.env.PRODUCTS_GRPC_URL ?? `localhost:${process.env.PRODUCTS_GRPC_PORT ?? 50052}`,
         },
       },
     ]),
